@@ -20,7 +20,7 @@ st.sidebar.image("https://cdn-icons-png.flaticon.com/512/5381/5381282.png", widt
 st.sidebar.header("Setting Predict")
 
 
-selected_stock = st.sidebar.text_input('Ticker Symbol', 'AAPL')
+selected_stock = st.sidebar.text_input('Ticker Symbol', 'KBANK.BK')
 n_years = st.sidebar.slider('ดูข้อมูลย้อนหลัง(ปี):',1 , 5 , 3)
 period = n_years *  365
 st.sidebar.markdown("---")
