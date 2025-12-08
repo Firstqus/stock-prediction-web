@@ -4,79 +4,174 @@ import pandas as pd
 import numpy as np
 import plotly.graph_objects as go
 
-# --------------------------
-# UI CONFIG
-# --------------------------
+# ---------------------------------------------------------
+# CONFIG
+# ---------------------------------------------------------
 st.set_page_config(page_title="AI Stock Advisor", layout="wide")
-st.title("📈 AI Stock Advisor – ระบบช่วยตัดสินใจซื้อขายหุ้น")
 
-st.write("""
-ระบบนี้ช่วยวิเคราะห์แนวโน้มตลาดจากอินดิเคเตอร์มาตรฐาน เช่น  
-**SMA, RSI, MACD** และตัดสินใจให้เป็น **ซื้อ / ถือ / ขาย** โดยอิงตามความสมเหตุสมผลทางเทคนิค
+# ---------------------------------------------------------
+# SESSION STATE DECLARATION
+# ---------------------------------------------------------
+if "lang" not in st.session_state:
+    st.session_state.lang = "TH"
+
+if "theme" not in st.session_state:
+    st.session_state.theme = "Light"
+
+if "show_tutorial" not in st.session_state:
+    st.session_state.show_tutorial = True
+
+
+# ---------------------------------------------------------
+# LANGUAGE PACK
+# ---------------------------------------------------------
+
+TXT = {
+    "TH": {
+        "title": "📈 AI Stock Advisor – ระบบช่วยตัดสินใจซื้อขายหุ้น",
+        "desc": """
+ระบบวิเคราะห์แนวโน้มตลาดโดยอิงจากอินดิเคเตอร์มาตรฐาน เช่น  
+**SMA, RSI, MACD** เพื่อช่วยให้คุณตัดสินใจ **ซื้อ / ถือ / ขาย** ได้อย่างมีเหตุผล
+        """,
+        "tutorial_title": "📘 วิธีใช้งานเบื้องต้น",
+        "ticker_input": "พิมพ์ชื่อหุ้น",
+        "category": "เลือกหมวดหมู่",
+        "popular": "หุ้นยอดนิยม",
+        "apply": "ใช้ตัวเลือกนี้",
+        "period": "ช่วงเวลา",
+        "analysis": "🔍 ผลการวิเคราะห์ AI",
+        "score": "คะแนนแนวโน้ม",
+        "reason_list": "📌 เหตุผลที่ AI ใช้พิจารณา",
+        "chart": "📈 กราฟราคา + แนวโน้ม",
+        "chart_desc": """
+- **Candlestick** = ราคา  
+- **SMA20** = แนวโน้มสั้น  
+- **SMA50** = แนวโน้มกลาง  
+ถ้า SMA20 ตัดขึ้น SMA50 = สัญญาณขาขึ้น
+        """,
+        "rsi": "RSI",
+        "macd": "MACD",
+        "rsi_desc": "RSI > 70 = Overbought | RSI < 30 = Oversold",
+        "macd_desc": "MACD ตัดขึ้น Signal = ขาขึ้น | ตัดลง = ขาลง",
+        "buy": "🟢 แนะนำ: ซื้อ (Strong Buy)",
+        "hold": "🟡 แนะนำ: ถือ (Hold)",
+        "sell": "🔴 แนะนำ: ขาย (Sell)",
+        "invalid": "❌ ไม่พบข้อมูลหุ้น กรุณาตรวจสอบชื่อให้ถูกต้อง",
+    },
+
+    "EN": {
+        "title": "📈 AI Stock Advisor – Buy/Sell Decision System",
+        "desc": """
+This system analyzes market trends using technical indicators  
+such as **SMA, RSI, MACD** to help you decide when to **Buy / Hold / Sell**.
+        """,
+        "tutorial_title": "📘 Quick Start Guide",
+        "ticker_input": "Enter stock ticker",
+        "category": "Select Category",
+        "popular": "Popular Stocks",
+        "apply": "Apply",
+        "period": "Time Range",
+        "analysis": "🔍 AI Analysis Result",
+        "score": "Trend Score",
+        "reason_list": "📌 AI Analysis Reason",
+        "chart": "📈 Price Chart + Trend",
+        "chart_desc": """
+- **Candlestick** = Price  
+- **SMA20** = Short-term trend  
+- **SMA50** = Mid-term trend  
+If SMA20 crosses above SMA50 = Bullish signal
+        """,
+        "rsi": "RSI",
+        "macd": "MACD",
+        "rsi_desc": "RSI > 70 = Overbought | RSI < 30 = Oversold",
+        "macd_desc": "MACD above Signal = Bullish | Below = Bearish",
+        "buy": "🟢 Strong Buy",
+        "hold": "🟡 Hold",
+        "sell": "🔴 Sell",
+        "invalid": "❌ No data found. Please check the ticker symbol.",
+    }
+}
+
+LANG = TXT[st.session_state.lang]
+
+# ---------------------------------------------------------
+# TOP MENU: LANGUAGE + THEME
+# ---------------------------------------------------------
+
+col_menu1, col_menu2, col_menu3 = st.columns([2,1,1])
+
+with col_menu2:
+    lang = st.selectbox("🌐 Language", ["TH", "EN"], index=0 if st.session_state.lang=="TH" else 1)
+    st.session_state.lang = lang
+    LANG = TXT[lang]
+
+with col_menu3:
+    theme = st.selectbox("🎨 Theme", ["Dark",], index=0)
+    st.session_state.theme = theme
+
+
+# ---------------------------------------------------------
+# APPLY THEME
+# ---------------------------------------------------------
+
+if theme == "Dark":
+    st.markdown("""
+        <style>
+        body { background-color: #0f1116; color: white; }
+        </style>
+    """, unsafe_allow_html=True)
+
+# ---------------------------------------------------------
+# TUTORIAL (SHOW ONLY ON FIRST LOAD)
+# ---------------------------------------------------------
+if st.session_state.show_tutorial:
+    st.header(LANG["tutorial_title"])
+    st.info("""
+- เลือกหุ้น หรือ พิมพ์ Ticker เช่น AAPL, TSLA  
+- ระบบจะโหลดข้อมูลย้อนหลังตามช่วงเวลาที่เลือก  
+- AI จะวิเคราะห์จาก SMA, RSI, MACD  
+- คะแนนสูง → Buy, คะแนนต่ำ → Sell  
 """)
+    st.button("เริ่มใช้งาน", on_click=lambda: st.session_state.update({"show_tutorial": False}))
+    st.stop()
 
-# --------------------------
-# STOCK SELECTOR (NEW!)
-# --------------------------
 
-st.subheader("🔍 เลือกหุ้นที่ต้องการวิเคราะห์")
+# ---------------------------------------------------------
+# MAIN TITLE
+# ---------------------------------------------------------
+st.title(LANG["title"])
+st.write(LANG["desc"])
+
+
+# ---------------------------------------------------------
+# STOCK SELECTION
+# ---------------------------------------------------------
 
 popular_stocks = {
-    "🇺🇸 หุ้นอเมริกา": ["AAPL", "MSFT", "AMZN", "NVDA", "META", "TSLA", "GOOGL"],
-    "🇹🇭 หุ้นไทย": ["PTT", "AOT", "CPALL", "KBANK", "ADVANC", "SCB", "BDMS"],
-    "📈 Crypto": ["BTC-USD", "ETH-USD", "BNB-USD"]
+    "US": ["AAPL", "MSFT", "AMZN", "NVDA", "META", "TSLA", "GOOGL"],
+    "TH": ["PTT.BK", "AOT.BK", "SCB.BK", "KBANK.BK", "CPALL.BK"],
+    "Crypto": ["BTC-USD", "ETH-USD", "BNB-USD"]
 }
+
+st.subheader("🔍 Stock Selection")
 
 colA, colB = st.columns([2,1])
 
 with colA:
-    ticker = st.text_input(
-        "พิมพ์ชื่อหุ้น (Ticker Symbol)",
-        value="AAPL",
-        help="เช่น AAPL = Apple, MSFT = Microsoft, PTT = ปตท."
-    )
+    ticker = st.text_input(LANG["ticker_input"], "AAPL")
 
 with colB:
-    category = st.selectbox("เลือกจากหมวดหมู่", list(popular_stocks.keys()))
-    from_list = st.selectbox("ตัวเลือกหุ้นยอดนิยม", popular_stocks[category])
-    if st.button("ใช้ตัวเลือกนี้"):
-        ticker = from_list
+    cat = st.selectbox(LANG["category"], list(popular_stocks.keys()))
+    pick = st.selectbox(LANG["popular"], popular_stocks[cat])
+    if st.button(LANG["apply"]):
+        ticker = pick
+
+period = st.selectbox(LANG["period"], ["3mo","6mo","1y","2y","5y"], index=2)
 
 
-period = st.selectbox("ช่วงเวลา", ["3mo", "6mo", "1y", "2y", "5y"], index=2)
-
-
-# --------------------------
-# INDICATOR GUIDE (NEW!)
-# --------------------------
-
-with st.expander("📘 คำอธิบาย โปรดกดอ่านเพื่อเข้าใจถึงการพิจารณา"):
-    st.markdown("""
-### ⭐ SMA (Simple Moving Average)
-- SMA20 = ค่าเฉลี่ยราคาปิด 20 วัน  
-- SMA50 = ค่าเฉลี่ยราคาปิด 50 วัน  
-**ใช้ดูแนวโน้มระยะสั้นและกลาง**  
-- ถ้า SMA20 > SMA50 → แนวโน้มขึ้น  
-- ถ้า SMA20 < SMA50 → แนวโน้มลง  
-
----
-
-### ⭐ RSI (Relative Strength Index)
-ใช้ดูว่าแรงซื้อแรงขายมากเกินไปหรือไม่  
-- RSI > 70 → Overbought (เสี่ยงลง)  
-- RSI < 30 → Oversold (เสี่ยงขึ้น)  
-
----
-
-### ⭐ MACD
-ใช้ดูโมเมนตัมตลาด  
-- MACD ตัดขึ้น Signal → แนวโน้มบวก  
-- MACD ตัดลง → แนวโน้มลบ
-    """)
-
-# --------------------------
-# LOAD DATA
-# --------------------------
+# ---------------------------------------------------------
+# LOAD STOCK DATA
+# ---------------------------------------------------------
 
 @st.cache_data
 def load_stock(symbol, period):
@@ -85,16 +180,17 @@ def load_stock(symbol, period):
     return df
 
 df = load_stock(ticker, period)
-df.columns = df.columns.get_level_values(0)
 
 if df.empty:
-    st.error("❌ ไม่พบข้อมูลหุ้น กรุณาตรวจสอบชื่อให้ถูกต้อง")
+    st.error(LANG["invalid"])
     st.stop()
 
-# --------------------------
-# CALCULATE INDICATORS
-# --------------------------
+df.columns = df.columns.get_level_values(0)
+df = df.loc[:, ~df.columns.duplicated()]
 
+# ---------------------------------------------------------
+# CALCULATE INDICATORS
+# ---------------------------------------------------------
 df["SMA20"] = df["Close"].rolling(20).mean()
 df["SMA50"] = df["Close"].rolling(50).mean()
 
@@ -109,45 +205,58 @@ df["EMA26"] = df["Close"].ewm(span=26).mean()
 df["MACD"] = df["EMA12"] - df["EMA26"]
 df["Signal"] = df["MACD"].ewm(span=9).mean()
 
-# --------------------------
-# AI DECISION
-# --------------------------
+df = df.dropna()
 
-def decision_engine(df):
-    latest = df.iloc[-1]
+
+# ---------------------------------------------------------
+# DECISION ENGINE
+# ---------------------------------------------------------
+def decide(df):
+    # เลือกเฉพาะ column ที่เป็น numeric
+    numeric_cols = df.select_dtypes(include=[np.number]).columns
+
+    # ดึงแถวสุดท้ายเฉพาะตัวเลข
+    L = df[numeric_cols].iloc[-1]
+
     score = 50
     reasons = []
 
-    if latest["SMA20"] > latest["SMA50"]:
+    # ----- SMA Trend -----
+    if float(L["SMA20"]) > float(L["SMA50"]):
         score += 15
-        reasons.append("📈 SMA20 > SMA50 → แนวโน้มระยะกลางเป็นขาขึ้น")
+        reasons.append("📈 SMA20 > SMA50: แนวโน้มขาขึ้น")
     else:
         score -= 15
-        reasons.append("📉 SMA20 < SMA50 → เทรนด์เริ่มอ่อนแรง")
+        reasons.append("📉 SMA20 < SMA50: แนวโน้มอ่อนแรง")
 
-    if latest["RSI"] < 30:
+    # ----- RSI -----
+    if float(L["RSI"]) < 30:
         score += 20
-        reasons.append("🟢 RSI < 30 → Oversold มีโอกาสเด้ง")
-    elif latest["RSI"] > 70:
+        reasons.append("🟢 RSI < 30 → Oversold")
+    elif float(L["RSI"]) > 70:
         score -= 20
-        reasons.append("🔴 RSI > 70 → Overbought มีโอกาสลง")
+        reasons.append("🔴 RSI > 70 → Overbought")
 
-    if latest["MACD"] > latest["Signal"]:
+    # ----- MACD -----
+    if float(L["MACD"]) > float(L["Signal"]):
         score += 15
-        reasons.append("📈 MACD ตัดขึ้น Signal → โมเมนตัมดี")
+        reasons.append("📈 MACD ตัดขึ้น Signal → โมเมนตัมบวก")
     else:
         score -= 15
-        reasons.append("📉 MACD ตัดลง → ความแข็งแรงลดลง")
+        reasons.append("📉 MACD ตัดลง Signal → โมเมนตัมลบ")
 
-    if latest["Close"] > latest["SMA50"]:
+    # ----- Price vs SMA50 -----
+    if float(L["Close"]) > float(L["SMA50"]):
         score += 10
-        reasons.append("💵 ราคายืนเหนือ SMA50 → ตลาดแข็งแรง")
+        reasons.append("💵 ราคายืนเหนือ SMA50 → Buyers คุมตลาด")
     else:
         score -= 10
-        reasons.append("⚠️ ราคาต่ำกว่า SMA50 → ความเสี่ยงเพิ่ม")
+        reasons.append("⚠️ ราคาต่ำกว่า SMA50 → เสี่ยงลง")
 
+    # Normalize 0–100
     score = max(0, min(100, score))
 
+    # Final Decision
     if score >= 70:
         decision = "🟢 แนะนำ: ซื้อ (Strong Buy)"
     elif score >= 55:
@@ -156,72 +265,65 @@ def decision_engine(df):
         decision = "🔴 แนะนำ: ขาย (Sell)"
 
     return score, decision, reasons
+try:
+    score, decision, reasons = decide(df)
+except Exception as e:
+    st.error(f"เกิดข้อผิดพลาดในระบบตัดสินใจ: {e}")
+    st.stop()
 
-score, decision, reasons = decision_engine(df)
+# ---------------------------------------------------------
+# DISPLAY DECISION
+# ---------------------------------------------------------
+st.subheader(LANG["analysis"])
+st.metric(LANG["score"], f"{score}/100")
 
-# --------------------------
-# DECISION OUTPUT
-# --------------------------
-st.subheader("🔍 ผลการวิเคราะห์ AI")
-
-st.metric("คะแนนแนวโน้ม", f"{score}/100")
-
-if "ซื้อ" in decision:
+if "Buy" in decision or "ซื้อ" in decision:
     st.success(decision)
-elif "ขาย" in decision:
+elif "Sell" in decision or "ขาย" in decision:
     st.error(decision)
 else:
     st.warning(decision)
 
-with st.expander("📌 เหตุผลของการวิเคราะห์ AI"):
+with st.expander(LANG["reason_list"]):
     for r in reasons:
         st.write("• " + r)
 
 
-# --------------------------
+# ---------------------------------------------------------
 # PRICE CHART
-# --------------------------
-st.subheader("📈 กราฟราคา + เส้นแนวโน้ม")
+# ---------------------------------------------------------
+st.subheader(LANG["chart"])
 
 fig = go.Figure()
 
 fig.add_trace(go.Candlestick(
-    x=df["Date"],
-    open=df["Open"],
-    high=df["High"],
-    low=df["Low"],
-    close=df["Close"],
-    name="ราคา"
+    x=df["Date"], open=df["Open"],
+    high=df["High"], low=df["Low"], close=df["Close"],
+    name="Price"
 ))
 
-fig.add_trace(go.Scatter(x=df["Date"], y=df["SMA20"], name="SMA20", line=dict(width=1)))
-fig.add_trace(go.Scatter(x=df["Date"], y=df["SMA50"], name="SMA50", line=dict(width=1)))
+fig.add_trace(go.Scatter(x=df["Date"], y=df["SMA20"], name="SMA20"))
+fig.add_trace(go.Scatter(x=df["Date"], y=df["SMA50"], name="SMA50"))
 
 fig.update_layout(height=500)
 st.plotly_chart(fig, use_container_width=True)
 
-with st.expander("ℹ️ คำอธิบายกราฟ"):
-    st.write("""
-- **Candlestick** = ราคา  
-- **SMA20** = แนวโน้มระยะสั้น  
-- **SMA50** = แนวโน้มระยะกลาง  
-ถ้า SMA20 ตัดขึ้น SMA50 → สัญญาณดี  
-    """)
+st.caption(LANG["chart_desc"])
 
-# --------------------------
-# RSI & MACD CHART
-# --------------------------
 
-st.subheader("📊 ตัวชี้วัดเพิ่มเติม")
+# ---------------------------------------------------------
+# RSI + MACD
+# ---------------------------------------------------------
+st.subheader("📊 Indicators")
 
 col1, col2 = st.columns(2)
 
 with col1:
-    st.write("### RSI")
+    st.write(f"### {LANG['rsi']}")
     st.line_chart(df.set_index("Date")["RSI"])
-    st.caption("RSI > 70 = Overbought | RSI < 30 = Oversold")
+    st.caption(LANG["rsi_desc"])
 
 with col2:
-    st.write("### MACD")
+    st.write(f"### {LANG['macd']}")
     st.line_chart(df.set_index("Date")[["MACD", "Signal"]])
-    st.caption("MACD ตัดขึ้น Signal = ขาขึ้น | ตัดลง = ขาลง")
+    st.caption(LANG["macd_desc"])
