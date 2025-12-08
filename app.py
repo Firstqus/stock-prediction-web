@@ -1,180 +1,227 @@
 import streamlit as st
 import yfinance as yf
 import pandas as pd
-import plotly.graph_objs as go
-import nltk
-from nltk.sentiment.vader import SentimentIntensityAnalyzer
-from datetime import date, timedelta
-from prophet import Prophet
-from prophet.plot import plot_plotly
+import numpy as np
+import plotly.graph_objects as go
 
-try:
-    nltk.data.find('vader_lexicon')
-except LookupError:
-    nltk.download('vader_lexicon')
-#-----Fornt web-----
-#ชื่อเว็ป
-st.set_page_config(page_title="Stock Prophet", page_icon = "📈" , layout = "wide")
-#sidebar ซ้ายมือ
-st.sidebar.image("https://cdn-icons-png.flaticon.com/512/5381/5381282.png", width = 100)
-st.sidebar.header("Setting Predict")
+# --------------------------
+# UI CONFIG
+# --------------------------
+st.set_page_config(page_title="AI Stock Advisor", layout="wide")
+st.title("📈 AI Stock Advisor – ระบบช่วยตัดสินใจซื้อขายหุ้น")
 
+st.write("""
+ระบบนี้ช่วยวิเคราะห์แนวโน้มตลาดจากอินดิเคเตอร์มาตรฐาน เช่น  
+**SMA, RSI, MACD** และตัดสินใจให้เป็น **ซื้อ / ถือ / ขาย** โดยอิงตามความสมเหตุสมผลทางเทคนิค
+""")
 
-selected_stock = st.sidebar.text_input('Ticker Symbol', 'MSFT')
-n_years = st.sidebar.slider('ดูข้อมูลย้อนหลัง(ปี):',1 , 5 , 3)
-period = n_years *  365
-st.sidebar.markdown("---")
-st.sidebar.write("Developed by **Student**")
+# --------------------------
+# STOCK SELECTOR (NEW!)
+# --------------------------
 
-#data loading
-@st.cache_data
-def load_data(ticker):
-    data = yf.download(ticker, start=date.today()-timedelta(days=period), end=date.today())
-    #fixedbug
-    if isinstance(data.columns, pd.MultiIndex):
-        data.columns = data.columns.get_level_values(0)
-    data.reset_index(inplace=True)
-    return data
-with st.spinner("loding data..."):
-    data = load_data(selected_stock)
-if data.empty:
-    st.error(f"❌ ไม่พบข้อมูลหุ้น: {selected_stock}")
-    st.warning("สาเหตุที่เป็นไปได้: 1. พิมพ์ชื่อหุ้นผิด 2. ตลาดปิด/วันหยุด 3. Yahoo Finance บล็อกการเข้าถึงจาก Cloud ชั่วคราว")
-    st.stop() # 🛑 สั่งหยุดทำงานทันที ไม่ให้ไปรันบรรทัดถัดไป (กัน Error)
+st.subheader("🔍 เลือกหุ้นที่ต้องการวิเคราะห์")
 
-data["SMA50"] = data['Close'].rolling(window=50).mean()
-data["SMA200"] = data['Close'].rolling(window=200).mean()
+popular_stocks = {
+    "🇺🇸 หุ้นอเมริกา": ["AAPL", "MSFT", "AMZN", "NVDA", "META", "TSLA", "GOOGL"],
+    "🇹🇭 หุ้นไทย": ["PTT", "AOT", "CPALL", "KBANK", "ADVANC", "SCB", "BDMS"],
+    "📈 Crypto": ["BTC-USD", "ETH-USD", "BNB-USD"]
+}
 
-#Main dashboard
-#name stock/price
-col1, col2 = st.columns([1,3])
-with col1:
-    st.title(f"📊 {selected_stock}")
-with col2:
-    #price
-    last_price = data["Close"].iloc[-1]
-    prev_price = data["Close"].iloc[-2]
-    change = last_price - prev_price
-    pct_change = (change / prev_price) * 100
+colA, colB = st.columns([2,1])
 
-    #add matrix 
-    st.metric(label="ราคาล่าสุด (Close price)",
-              value=f"{last_price:.2f}",
-              delta=f"{change:.2f} ({pct_change:.2f}%)")
-#create tap
-tab1 , tab2 , tab3 , tab4= st.tabs(["📈 ภาพรวม (Technical)", "ทำนายอนาคต (Forecast)", "ข้อมูลดิบ (Raw data)", "📰 วิเคราะห์ข่าว (News AI)"])
-#Techninal Analysis
-with tab1:
-    st.subheader(f"กราฟราคาเส้นแนวโน้ม (SMA)")
-
-    #custom graph plotly
-    fig = go.Figure()
-    fig.add_trace(go.Scatter(x=data['Date'], y = data["Close"], name="Close Price", line_color='#1f77b4' ))
-    fig.add_trace(go.Scatter(x=data['Date'], y = data["SMA50"], name="SMA 50 (short term)",line_color = "#9467bd", line=dict(width=2)))
-    fig.add_trace(go.Scatter(x=data['Date'], y = data["SMA200"], name ="SMA200 (longterm)", line_color = "#ff7f0e", line=dict(width=2)))
-    fig.layout.update(
-        xaxis_rangeslider_visible=True,
-        height=500,
-        template="plotly_dark",
-        margin=dict(l=20, r=20, t=50, b=20),
-        legend=dict(orientation="h", yanchor="bottom", y=1.02,xanchor="right", x=1)
+with colA:
+    ticker = st.text_input(
+        "พิมพ์ชื่อหุ้น (Ticker Symbol)",
+        value="AAPL",
+        help="เช่น AAPL = Apple, MSFT = Microsoft, PTT = ปตท."
     )
-    st.plotly_chart(fig, use_container_width=True)
+
+with colB:
+    category = st.selectbox("เลือกจากหมวดหมู่", list(popular_stocks.keys()))
+    from_list = st.selectbox("ตัวเลือกหุ้นยอดนิยม", popular_stocks[category])
+    if st.button("ใช้ตัวเลือกนี้"):
+        ticker = from_list
 
 
-    #comment signals
-    st.info("💡 **Tips:** ถ้าเส้น SMA50 (สีม่วง) ตัดขึ้นเหนือ SMA200 (สีส้ม) เรียกว่า 'Golden Cross' เป็นสัญญาณขาขึ้น")
-with tab2:
-    st.subheader(f"แนวโน้มราคาในอีก {n_years} ปีข้างหน้า (AI Forecast)")
-    #prophet data
-    df_train = data[["Date", "Close"]].rename(columns={"Date":'ds','Close':'y'})
-    m = Prophet()
-    m.fit(df_train)
-    future = m.make_future_dataframe(periods=period)
-    forecast = m.predict(future)
+period = st.selectbox("ช่วงเวลา", ["3mo", "6mo", "1y", "2y", "5y"], index=2)
 
-    #graph predict
-    fig_pred = plot_plotly(m, forecast)
-    fig_pred.update_layout(height=500, template="plotly_dark", xaxis_rangeslider_visible=True)
-    st.plotly_chart(fig_pred, use_container_width=True)
-    
-    # กราฟ Components (แยกส่วน)
-    st.write("---")
-    st.write("##### 🧩 เจาะลึกพฤติกรรมราคา (Components)")
-    col_a, col_b = st.columns(2)
-    
-    # ต้องดึงกราฟจาก matplotlib มาโชว์
-    fig_comp = m.plot_components(forecast)
-    st.pyplot(fig_comp)
 
-# --- TAB 3: Raw Data ---
-with tab3:
-    st.subheader("ข้อมูลราคาหุ้นย้อนหลัง")
-    st.dataframe(data.sort_values(by='Date', ascending=False), use_container_width=True)
-with tab4:
-    st.subheader(f"ข่าวล่าสุดของ {selected_stock} และ AI predict")
-    #news pulled from Yahoo Finance
-    sn = yf.Ticker(selected_stock)
-    news_list = sn.news
-    #Analyzer
-    sia = SentimentIntensityAnalyzer()
-# 3. วนลูปอ่านข่าว (แก้บั๊ก NoneType เรียบร้อย)
-    for i in news_list:
-        # 1. เช็คก่อนว่ามีกุญแจชื่อ 'content' ไหม
-        if 'content' in i:
-            payload = i['content']
-            
-            title = payload.get('title', 'ไม่ระบุหัวข้อข่าว')
-            
-            # --- แก้ตรงนี้: เช็คก่อนดึงลิงก์ ---
-            click_url = payload.get('clickThroughUrl')
-            if click_url: # ถ้ามีข้อมูล (ไม่เป็น None)
-                link = click_url.get('url', '#')
-            else:
-                link = '#'
-            # -------------------------------
-            
-            # --- แก้ตรงนี้: เช็คก่อนดึงสำนักข่าว ---
-            provider = payload.get('provider')
-            if provider:
-                publisher = provider.get('displayName', 'Unknown')
-            else:
-                publisher = 'Unknown'
-            # -------------------------------
-            
-        # 2. เผื่อฟลุ๊คเจอแบบเก่า (Title อยู่ชั้นนอกสุด)
-        else:
-            title = i.get('title', 'ไม่ระบุหัวข้อข่าว')
-            link = i.get('link', '#')
-            publisher = i.get('publisher', 'Unknown')
+# --------------------------
+# INDICATOR GUIDE (NEW!)
+# --------------------------
 
-        # ถ้าหาหัวข้อไม่เจอจริงๆ ให้ข้าม
-        if title == 'ไม่ระบุหัวข้อข่าว':
-            continue
+with st.expander("📘 คำอธิบาย โปรดกดอ่านเพื่อเข้าใจถึงการพิจารณา"):
+    st.markdown("""
+### ⭐ SMA (Simple Moving Average)
+- SMA20 = ค่าเฉลี่ยราคาปิด 20 วัน  
+- SMA50 = ค่าเฉลี่ยราคาปิด 50 วัน  
+**ใช้ดูแนวโน้มระยะสั้นและกลาง**  
+- ถ้า SMA20 > SMA50 → แนวโน้มขึ้น  
+- ถ้า SMA20 < SMA50 → แนวโน้มลง  
 
-        # --- ส่วนคำนวณ AI (เหมือนเดิม) ---
-        try:
-            score = sia.polarity_scores(title)['compound']
-        except:
-            score = 0 
+---
 
-        # --- ส่วนเลือกสี (เหมือนเดิม) ---
-        if score > 0.05:
-            sentiment = "Bullish (ข่าวดี) 🐂"
-            color = "#00FF00"
-        elif score < -0.05:
-            sentiment = "Bearish (ข่าวร้าย) 🐻"
-            color = "#FF4B4B"
-        else:
-            sentiment = "Neutral (เฉยๆ) 😐"
-            color = "gray"
-            
-        st.markdown(f"""
-        <div style="padding: 10px; border-radius: 5px; border: 1px solid #333; margin-bottom: 10px;">
-            <h4 style="color: {color}; margin:0;">{sentiment} (Score: {score:.2f})</h4>
-            <a href="{link}" target="_blank" style="text-decoration: none; color: white;">
-                <h3>{title}</h3>
-            </a>
-            <small>Source: {publisher}</small>
-        </div>
-        """, unsafe_allow_html=True)
+### ⭐ RSI (Relative Strength Index)
+ใช้ดูว่าแรงซื้อแรงขายมากเกินไปหรือไม่  
+- RSI > 70 → Overbought (เสี่ยงลง)  
+- RSI < 30 → Oversold (เสี่ยงขึ้น)  
+
+---
+
+### ⭐ MACD
+ใช้ดูโมเมนตัมตลาด  
+- MACD ตัดขึ้น Signal → แนวโน้มบวก  
+- MACD ตัดลง → แนวโน้มลบ
+    """)
+
+# --------------------------
+# LOAD DATA
+# --------------------------
+
+@st.cache_data
+def load_stock(symbol, period):
+    df = yf.download(symbol, period=period, auto_adjust=True)
+    df.reset_index(inplace=True)
+    return df
+
+df = load_stock(ticker, period)
+df.columns = df.columns.get_level_values(0)
+
+if df.empty:
+    st.error("❌ ไม่พบข้อมูลหุ้น กรุณาตรวจสอบชื่อให้ถูกต้อง")
+    st.stop()
+
+# --------------------------
+# CALCULATE INDICATORS
+# --------------------------
+
+df["SMA20"] = df["Close"].rolling(20).mean()
+df["SMA50"] = df["Close"].rolling(50).mean()
+
+delta = df["Close"].diff()
+gain = delta.where(delta > 0, 0)
+loss = -delta.where(delta < 0, 0)
+rs = gain.rolling(14).mean() / loss.rolling(14).mean()
+df["RSI"] = 100 - (100 / (1 + rs))
+
+df["EMA12"] = df["Close"].ewm(span=12).mean()
+df["EMA26"] = df["Close"].ewm(span=26).mean()
+df["MACD"] = df["EMA12"] - df["EMA26"]
+df["Signal"] = df["MACD"].ewm(span=9).mean()
+
+# --------------------------
+# AI DECISION
+# --------------------------
+
+def decision_engine(df):
+    latest = df.iloc[-1]
+    score = 50
+    reasons = []
+
+    if latest["SMA20"] > latest["SMA50"]:
+        score += 15
+        reasons.append("📈 SMA20 > SMA50 → แนวโน้มระยะกลางเป็นขาขึ้น")
+    else:
+        score -= 15
+        reasons.append("📉 SMA20 < SMA50 → เทรนด์เริ่มอ่อนแรง")
+
+    if latest["RSI"] < 30:
+        score += 20
+        reasons.append("🟢 RSI < 30 → Oversold มีโอกาสเด้ง")
+    elif latest["RSI"] > 70:
+        score -= 20
+        reasons.append("🔴 RSI > 70 → Overbought มีโอกาสลง")
+
+    if latest["MACD"] > latest["Signal"]:
+        score += 15
+        reasons.append("📈 MACD ตัดขึ้น Signal → โมเมนตัมดี")
+    else:
+        score -= 15
+        reasons.append("📉 MACD ตัดลง → ความแข็งแรงลดลง")
+
+    if latest["Close"] > latest["SMA50"]:
+        score += 10
+        reasons.append("💵 ราคายืนเหนือ SMA50 → ตลาดแข็งแรง")
+    else:
+        score -= 10
+        reasons.append("⚠️ ราคาต่ำกว่า SMA50 → ความเสี่ยงเพิ่ม")
+
+    score = max(0, min(100, score))
+
+    if score >= 70:
+        decision = "🟢 แนะนำ: ซื้อ (Strong Buy)"
+    elif score >= 55:
+        decision = "🟡 แนะนำ: ถือ (Hold)"
+    else:
+        decision = "🔴 แนะนำ: ขาย (Sell)"
+
+    return score, decision, reasons
+
+score, decision, reasons = decision_engine(df)
+
+# --------------------------
+# DECISION OUTPUT
+# --------------------------
+st.subheader("🔍 ผลการวิเคราะห์ AI")
+
+st.metric("คะแนนแนวโน้ม", f"{score}/100")
+
+if "ซื้อ" in decision:
+    st.success(decision)
+elif "ขาย" in decision:
+    st.error(decision)
+else:
+    st.warning(decision)
+
+with st.expander("📌 เหตุผลของการวิเคราะห์ AI"):
+    for r in reasons:
+        st.write("• " + r)
+
+
+# --------------------------
+# PRICE CHART
+# --------------------------
+st.subheader("📈 กราฟราคา + เส้นแนวโน้ม")
+
+fig = go.Figure()
+
+fig.add_trace(go.Candlestick(
+    x=df["Date"],
+    open=df["Open"],
+    high=df["High"],
+    low=df["Low"],
+    close=df["Close"],
+    name="ราคา"
+))
+
+fig.add_trace(go.Scatter(x=df["Date"], y=df["SMA20"], name="SMA20", line=dict(width=1)))
+fig.add_trace(go.Scatter(x=df["Date"], y=df["SMA50"], name="SMA50", line=dict(width=1)))
+
+fig.update_layout(height=500)
+st.plotly_chart(fig, use_container_width=True)
+
+with st.expander("ℹ️ คำอธิบายกราฟ"):
+    st.write("""
+- **Candlestick** = ราคา  
+- **SMA20** = แนวโน้มระยะสั้น  
+- **SMA50** = แนวโน้มระยะกลาง  
+ถ้า SMA20 ตัดขึ้น SMA50 → สัญญาณดี  
+    """)
+
+# --------------------------
+# RSI & MACD CHART
+# --------------------------
+
+st.subheader("📊 ตัวชี้วัดเพิ่มเติม")
+
+col1, col2 = st.columns(2)
+
+with col1:
+    st.write("### RSI")
+    st.line_chart(df.set_index("Date")["RSI"])
+    st.caption("RSI > 70 = Overbought | RSI < 30 = Oversold")
+
+with col2:
+    st.write("### MACD")
+    st.line_chart(df.set_index("Date")[["MACD", "Signal"]])
+    st.caption("MACD ตัดขึ้น Signal = ขาขึ้น | ตัดลง = ขาลง")
